@@ -1,0 +1,28 @@
+[package]
+name = "icrc127"
+version = "0.1.0"
+description = "ICRC-127: Bounty System"
+repository = "https://github.com/prometheus-protocol/icrc127.mo"
+keywords = [ "icrc127", "bounty", "dfx" ]
+
+[dependencies]
+base = "0.14.9"
+ovs-fixed = "0.1.4"
+class-plus = "0.0.2"
+timer-tool = "0.1.1"
+star = "0.1.1"
+map = "9.0.1"
+icrc10-mo = "0.0.1"
+stable-local-log = "0.1.1"
+candy = "0.3.1"
+base16 = "1.0.0"
+icrc3-mo = "0.3.0"
+sha2 = "0.1.4"
+icrc2-types = "1.1.0"
+
+[toolchain]
+moc = "0.14.9"
+
+[dev-dependencies]
+test = "2.1.1"
+bench = "1.0.0"

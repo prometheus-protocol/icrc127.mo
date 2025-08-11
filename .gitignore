@@ -1,0 +1,6 @@
+src/declarations/
+.mops
+.dfx
+node_modules
+.did
+.env
