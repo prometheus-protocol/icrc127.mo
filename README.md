@@ -82,12 +82,6 @@ actor class MyBountyHost<system>(...) {
     };
   });
 
-  // 4. Initialize the library's timer handler
-  ICRC127.initialize_bounty_timers({
-    tt = tt();
-    handler = icrc127().handle_bounty_expiration;
-  });
-
   // 5. Expose the library's functions as public endpoints
   public shared(msg) func icrc127_create_bounty(req: ICRC127Service.CreateBountyRequest): async ICRC127Service.CreateBountyResult {
     await icrc127().icrc127_create_bounty(msg.caller, req);
