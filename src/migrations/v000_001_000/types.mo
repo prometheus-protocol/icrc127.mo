@@ -172,7 +172,7 @@ module {
 
     // Maps a bounty_id to the ActionId of its scheduled expiration timer.
     // This keeps the Bounty record itself spec-compliant.
-    var expiration_timers : BTree.BTree<Nat, ActionId>;
+    var expiration_timers : BTree.BTree<Nat, Nat>;
   };
 
   public type StateShared = {
@@ -186,7 +186,7 @@ module {
     bounties : [(Nat, Bounty)];
     next_bounty_id : Nat;
 
-    expiration_timers : [(Nat, ActionId)];
+    expiration_timers : [(Nat, Nat)];
   };
 
   public func shareState(x : State) : StateShared {

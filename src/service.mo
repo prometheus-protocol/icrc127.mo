@@ -1,6 +1,7 @@
 // libs/icrc127/src/service.mo
 import Principal "mo:base/Principal";
 import Blob "mo:base/Blob";
+import ICRC2 "mo:icrc2-types";
 
 // This service file is a direct Motoko translation of the ICRC-127 specification.
 module {
@@ -112,6 +113,7 @@ module {
     #Error : {
       #NoMatch;
       #Generic : Text;
+      #PayoutFailed : ICRC2.TransferError;
     };
   };
 

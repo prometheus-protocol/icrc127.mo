@@ -96,6 +96,8 @@ module {
     // --- Private Helpers ---
     // This is your excellent implementation.
     private func natFromBytesBE(bytes : [Nat8]) : Nat {
+      if (bytes.size() == 0) { return 0 };
+
       var result : Nat = 0;
       for (byte in bytes.vals()) {
         result := Nat.bitshiftLeft(result, 8);
@@ -206,8 +208,16 @@ module {
         params = natToBlobBE(8, bounty_id);
       };
       // Call setActionSync with two arguments: time and the action record.
-      let action_id = environment.tt.setActionSync<system>(req.timeout_date, actionRequest);
-      ignore BTree.insert(state.expiration_timers, Nat.compare, bounty_id, action_id);
+      let action_id_record = environment.tt.setActionSync<system>(req.timeout_date, actionRequest);
+
+      // --- ADD THIS DEBUG BLOCK ---
+      Debug.print("--- CREATE ---");
+      Debug.print("Bounty ID: " # Nat.toText(bounty_id));
+      Debug.print("TimerTool returned ActionId record: " # debug_show (action_id_record));
+      Debug.print("Storing Timer ID: " # Nat.toText(action_id_record.id));
+      // --- END DEBUG BLOCK ---
+
+      ignore BTree.insert(state.expiration_timers, Nat.compare, bounty_id, action_id_record.id);
 
       // --- 4. Log to ICRC-3 (if available) ---
       switch (environment.add_record) {
@@ -235,7 +245,7 @@ module {
       return #Ok({ bounty_id = bounty_id; trx_id = ?trx_id });
     };
 
-    public func icrc127_submit_bounty(caller : Principal, req : Service.BountySubmissionRequest) : async Service.BountySubmissionResult {
+    public func icrc127_submit_bounty<system>(caller : Principal, req : Service.BountySubmissionRequest) : async Service.BountySubmissionResult {
       // 1. Find the bounty
       let original_bounty = switch (BTree.get(state.bounties, Nat.compare, req.bounty_id)) {
         case (null) { return #Error(#NoMatch) };
@@ -246,7 +256,15 @@ module {
       if (original_bounty.claimed != null) {
         return #Error(#Generic("Bounty already claimed."));
       };
-      // TODO: Check timeout_date
+
+      switch (original_bounty.timeout_date) {
+        case (?t) {
+          if (natNow() > t) {
+            return #Error(#Generic("Bounty has expired."));
+          };
+        };
+        case _ {};
+      };
 
       // 3. Log the submission attempt (`127submit_bounty`)
       let claim_id = original_bounty.claims.size() + 1;
@@ -327,18 +345,52 @@ module {
             from_subaccount = null;
           };
           let payout_res = await environment.icrc1_transfer(original_bounty.token_canister_id, payout_args);
-          // TODO: Handle payout error, maybe revert claim?
 
-          // Create a new bounty record with the updated claim status and new claim
-          let final_bounty : Bounty = {
-            original_bounty with
-            claims = Array.append(original_bounty.claims, [new_claim_record]);
-            claimed = ?claim_id;
-            claimed_date = ?natNow();
+          switch (payout_res) {
+            case (#Ok(trx_id)) {
+
+              // Payout was successful. Mark bounty as claimed.
+              let final_bounty : Bounty = {
+                original_bounty with
+                claims = Array.append(original_bounty.claims, [new_claim_record]);
+                claimed = ?claim_id;
+                claimed_date = ?natNow();
+              };
+              ignore BTree.insert(state.bounties, Nat.compare, req.bounty_id, final_bounty);
+
+              // Payout was successful, so we MUST cancel the expiration timer.
+              switch (BTree.get(state.expiration_timers, Nat.compare, req.bounty_id)) {
+                case (?timer_id) {
+
+                  ignore environment.tt.cancelAction<system>(timer_id);
+                  ignore BTree.delete(state.expiration_timers, Nat.compare, req.bounty_id);
+                };
+                case (null) {};
+              };
+            };
+            case (#Err(e)) {
+              // Payout failed. Do NOT mark as claimed. Log the error and return.
+              switch (environment.add_record) {
+                case (?add_record) {
+                  let tx : ICRC16Map = [
+                    ("bounty_id", #Nat(req.bounty_id)),
+                    ("claim_id", #Nat(claim_id)),
+                    ("error", #Text(debug_show e)),
+                  ];
+                  let meta : ICRC16Map = [("btype", #Text("127payout_failed"))];
+                  ignore add_record<system>(#Map(tx), ?#Map(meta));
+                };
+                case _ {};
+              };
+              // Still add the claim attempt to the record for a full audit trail.
+              let final_bounty : Bounty = {
+                original_bounty with
+                claims = Array.append(original_bounty.claims, [new_claim_record]);
+              };
+              ignore BTree.insert(state.bounties, Nat.compare, req.bounty_id, final_bounty);
+              return #Error(#PayoutFailed(e));
+            };
           };
-
-          // Replace the old bounty record with the new one in the BTree
-          ignore BTree.insert(state.bounties, Nat.compare, req.bounty_id, final_bounty);
         };
         case (#Invalid) {
           // This is the failure path. No payout.
@@ -352,8 +404,6 @@ module {
           ignore BTree.insert(state.bounties, Nat.compare, req.bounty_id, final_bounty);
         };
       };
-
-      // TODO: Log submission and run result to ICRC-3
 
       return #Ok({ claim_id = claim_id; result = ?run_result });
     };
@@ -403,13 +453,27 @@ module {
     // --- Dedicated public handler for expiration timers ---
     // The host canister will register this function as a listener with the TimerTool.
     public func handleBountyExpiration(id : TT.ActionId, action : TT.Action) : async* Star.Star<TT.ActionId, TT.Error> {
-      Debug.print("Handling bounty expiration for ID: ");
+      let payload_size = Blob.toArray(action.params).size();
+
+      if (payload_size == 0) {
+        return #trappable(id);
+      };
+
       let bounty_id = natFromBytesBE(Blob.toArray(action.params));
 
       // Find the bounty to expire
       let bounty = switch (BTree.get(state.bounties, Nat.compare, bounty_id)) {
         case (null) { return #trappable(id) }; // Bounty already processed/removed
         case (?b) { b };
+      };
+
+      // Defensively check if the bounty has already been claimed.
+      // If so, the timer firing is an error (due to the TimerTool bug),
+      // so we should do nothing and simply exit gracefully.
+      if (bounty.claimed != null) {
+        // Clean up the orphaned timer mapping just in case.
+        ignore BTree.delete(state.expiration_timers, Nat.compare, bounty_id);
+        return #awaited(id);
       };
 
       // Safety check: only expire unclaimed bounties

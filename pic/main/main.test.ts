@@ -243,8 +243,9 @@ describe("ICRC-127 Bounty Library (Hook-Based Validation)", () => {
       // ARRANGE: Create another bounty with a short timeout
       bountyCanister.setIdentity(bountyCreatorIdentity);
       const bountyAmount = 150_000n;
-      const timeoutMs = 5_000;
-      const timeoutNano = BigInt(Date.now() + timeoutMs) * 1_000_000n;
+      const timeoutDurationMs = 5_000;
+      const currentTimeNano = BigInt(await pic.getTime()) * 1_000_000n;
+      const timeoutNano = currentTimeNano + BigInt(timeoutDurationMs * 1_000_000);
 
       const createRequest: CreateBountyRequest = {
         bounty_id: [],
@@ -270,10 +271,11 @@ describe("ICRC-127 Bounty Library (Hook-Based Validation)", () => {
         submission: { Text: "claim_me_quick" },
         account: [],
       };
-      await bountyCanister.icrc127_submit_bounty(submissionRequest);
+      const res = await bountyCanister.icrc127_submit_bounty(submissionRequest);
+      console.log("Claim result:", res);
 
       // Now, advance time past the original expiration date
-      await pic.advanceTime(timeoutMs + 1000);
+      await pic.advanceTime(timeoutDurationMs + 1000);
       await pic.tick(2);
 
       // ASSERT

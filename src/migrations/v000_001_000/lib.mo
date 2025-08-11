@@ -25,7 +25,7 @@ module {
       var next_bounty_id = 0;
 
       // Initialize the new empty BTree for timers.
-      var expiration_timers = v0_1_0.BTree.init<Nat, v0_1_0.ActionId>(null);
+      var expiration_timers = v0_1_0.BTree.init<Nat, Nat>(null);
     };
     return #v0_1_0(#data(state));
   };
