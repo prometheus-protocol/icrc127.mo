@@ -349,7 +349,30 @@ module {
           switch (payout_res) {
             case (#Ok(trx_id)) {
 
-              // Payout was successful. Mark bounty as claimed.
+              // --- SUCCESS PATH ---
+              // Payout was successful. Now we can build the full claim record.
+
+              // 1. Populate the claim_metadata as per the spec.
+              let claim_meta_buf = Buffer.Buffer<(Text, ICRC16)>(5);
+              claim_meta_buf.add(("icrc127:claim_amount", #Nat(original_bounty.token_amount)));
+              claim_meta_buf.add(("icrc127:claim_token_trx_id", #Nat(trx_id)));
+              claim_meta_buf.add(("icrc127:claim_canister", #Principal(original_bounty.token_canister_id)));
+              let subaccount_icrc16 = Option.map<Blob, ICRC16>(claimant_account.subaccount, func(b) { #Blob(b) });
+              claim_meta_buf.add(("icrc127:claim_account", #Array([#Principal(claimant_account.owner), #Option(subaccount_icrc16)])));
+              let populated_claim_metadata = Buffer.toArray(claim_meta_buf);
+
+              // 2. Create the final claim record with the populated metadata.
+              let new_claim_record : ClaimRecord = {
+                claim_id = claim_id;
+                time_submitted = natNow();
+                caller = caller;
+                claim_account = req.account;
+                submission = req.submission;
+                claim_metadata = populated_claim_metadata; // Use the populated data
+                result = ?run_result;
+              };
+
+              // 3. Create the final bounty record, marked as claimed.
               let final_bounty : Bounty = {
                 original_bounty with
                 claims = Array.append(original_bounty.claims, [new_claim_record]);
@@ -358,10 +381,9 @@ module {
               };
               ignore BTree.insert(state.bounties, Nat.compare, req.bounty_id, final_bounty);
 
-              // Payout was successful, so we MUST cancel the expiration timer.
+              // 4. Cancel the expiration timer.
               switch (BTree.get(state.expiration_timers, Nat.compare, req.bounty_id)) {
                 case (?timer_id) {
-
                   ignore environment.tt.cancelAction<system>(timer_id);
                   ignore BTree.delete(state.expiration_timers, Nat.compare, req.bounty_id);
                 };
@@ -381,6 +403,16 @@ module {
                   ignore add_record<system>(#Map(tx), ?#Map(meta));
                 };
                 case _ {};
+              };
+              // Payout failed. Create a claim record with empty metadata for the audit trail.
+              let new_claim_record : ClaimRecord = {
+                claim_id = claim_id;
+                time_submitted = natNow();
+                caller = caller;
+                claim_account = req.account;
+                submission = req.submission;
+                claim_metadata = [];
+                result = ?run_result;
               };
               // Still add the claim attempt to the record for a full audit trail.
               let final_bounty : Bounty = {
@@ -413,10 +445,85 @@ module {
       BTree.get(state.bounties, Nat.compare, bounty_id);
     };
 
+    // This helper function is structured like the icrc118 example.
+    private func matches_all_filters(bounty : Bounty, filters : [Service.ListBountiesFilter]) : Bool {
+      if (filters.size() == 0) { return true };
+
+      for (filter in filters.vals()) {
+        let matches : Bool = switch (filter) {
+          case (#claimed(is_claimed)) (bounty.claimed != null) == is_claimed;
+          case (#claimed_by(account)) switch (bounty.claimed) {
+            case (null) false;
+            case (?claim_id) {
+              if (claim_id == 0 or claim_id > bounty.claims.size()) {
+                false;
+              } else {
+                let claim_record = bounty.claims[claim_id - 1];
+                claim_record.claim_account != null and claim_record.claim_account == ?account;
+              };
+            };
+          };
+          case (#created_after(t)) bounty.created > t;
+          case (#created_before(t)) bounty.created < t;
+          case (#validation_canister(p)) bounty.validation_canister_id == p;
+          case (#metadata(filter_meta)) {
+            let bounty_meta_map = MapLib.fromIter<Text, MigrationTypes.Current.ICRC16>(
+              bounty.bounty_metadata.vals(),
+              Map.thash,
+            );
+            var all_match = true;
+            label metaLoop for ((key, filter_val) in filter_meta.vals()) {
+              switch (MapLib.get(bounty_meta_map, Map.thash, key)) {
+                case (null) { all_match := false; break metaLoop };
+                case (?bounty_val) {
+                  if (bounty_val != filter_val) {
+                    all_match := false;
+                    break metaLoop;
+                  };
+                };
+              };
+            };
+            all_match;
+          };
+        };
+        if (not matches) { return false };
+      };
+      return true;
+    };
+
     public func icrc127_list_bounties(filter : ?[Service.ListBountiesFilter], prev : ?Nat, take : ?Nat) : [Bounty] {
-      // TODO: Implement filtering and pagination
-      let bounties_array = BTree.toArray(state.bounties);
-      Array.map<(Nat, Bounty), Bounty>(bounties_array, func((_ : Nat, bounty : Bounty)) { bounty });
+      let active_filters = Option.get(filter, []);
+      let limit = Nat.min(Option.get(take, 10), 100);
+      let results = Buffer.Buffer<Bounty>(limit);
+
+      // Get an iterator for the entire B-Tree.
+      let iter = BTree.entries(state.bounties);
+
+      // The 'started' flag pattern for pagination.
+      var started = (prev == null);
+
+      label main for ((bounty_id, bounty) in iter) {
+        if (not started) {
+          // We are in the "skipping" phase until we find the 'prev' item.
+          // The 'prev' variable must be non-null here.
+          if (?bounty_id == prev) {
+            started := true;
+          };
+          // Continue to the next item without processing this one.
+          continue main;
+        };
+
+        // If we get here, we are in the "collecting" phase.
+        if (results.size() >= limit) {
+          break main;
+        };
+
+        if (matches_all_filters(bounty, active_filters)) {
+          results.add(bounty);
+        };
+      };
+
+      return Buffer.toArray(results);
     };
 
     public func icrc127_metadata() : ICRC16Map {

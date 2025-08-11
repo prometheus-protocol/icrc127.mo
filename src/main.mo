@@ -241,7 +241,11 @@ shared (deployer) actor class ICRC127BountyCanister<system>(
   public query func icrc127_get_bounty(bounty_id : Nat) : async ?ICRC127.Bounty {
     icrc127().icrc127_get_bounty(bounty_id);
   };
-  public query func icrc127_list_bounties(filter : ?[Service.ListBountiesFilter], prev : ?Nat, take : ?Nat) : async [ICRC127.Bounty] {
+  public query func icrc127_list_bounties({
+    filter : ?[Service.ListBountiesFilter];
+    prev : ?Nat;
+    take : ?Nat;
+  }) : async [ICRC127.Bounty] {
     icrc127().icrc127_list_bounties(filter, prev, take);
   };
   public query func icrc127_metadata() : async ICRC127.ICRC16Map {
