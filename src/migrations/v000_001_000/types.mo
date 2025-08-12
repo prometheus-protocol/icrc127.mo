@@ -93,6 +93,7 @@ module {
     creator : Principal; // The original creator of the bounty
     token_canister_id : Principal; // The token used for the bounty
     token_amount : Nat; // The amount of the bounty
+    payout_fee : Nat; // The fee for processing the bounty payout
     validation_canister_id : Principal;
     validation_call_timeout : Nat;
     bounty_metadata : ICRC16Map;
@@ -134,6 +135,7 @@ module {
     log : Log.Local_log;
     add_record : ?(<system>(ICRC16, ?ICRC16) -> Nat);
     // Functions to interact with token ledgers.
+    icrc1_fee : (canister_id : Principal) -> async Nat;
     icrc1_transfer : (canister : Principal, args : ICRC2.TransferArgs) -> async ICRC2.TransferResult;
     icrc2_transfer_from : (canister : Principal, args : ICRC2.TransferFromArgs) -> async ICRC2.TransferFromResult;
 

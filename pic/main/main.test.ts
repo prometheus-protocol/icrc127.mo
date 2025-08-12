@@ -39,7 +39,8 @@ describe("ICRC-127 Core Functionality", () => {
   let bountyCanister: Actor<Icrc127Service>;
   let bountyCanisterId: Principal;
   let bountyId: bigint;
-  const bountyAmount = 500_000n;
+  const BOUNTY_AMOUNT = 500_000n; // 500,000 tokens
+  const FEE_AMOUNT = 10_000n; // 10,000 tokens for payout fee
   
   beforeAll(async () => {
     pic = await PocketIc.create(process.env.PIC_URL);
@@ -65,21 +66,20 @@ describe("ICRC-127 Core Functionality", () => {
 
   it('should create a new bounty and escrow the funds', async () => {
     bountyCanister.setIdentity(bountyCreatorIdentity);
-    const bountyAmount = 500_000n;
     const createRequest: CreateBountyRequest = {
       bounty_id: [],
       validation_canister_id: Principal.fromText("aaaaa-aa"),
       timeout_date: BigInt(await pic.getTime() * 1_000_000) + 86_400_000_000_000n,
       start_date: [],
       challenge_parameters: { Text: "secret_code_123" },
-      bounty_metadata: [['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: bountyAmount }]],
+      bounty_metadata: [['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: BOUNTY_AMOUNT }]],
     };
     const result = await bountyCanister.icrc127_create_bounty(createRequest);
     expect('Ok' in result).toBe(true);
     if (!('Ok' in result)) throw new Error("Bounty creation failed");
     bountyId = result.Ok.bounty_id;
     const creatorBalance = await bountyCanister.get_balance(bountyCreatorIdentity.getPrincipal());
-    expect(creatorBalance).toBe(500_000n);
+    expect(creatorBalance).toBe(BOUNTY_AMOUNT - FEE_AMOUNT); // Creator balance should be reduced by the bounty amount + fee
   });
 
   it('should REJECT a claim with incorrect submission data', async () => {
@@ -105,7 +105,7 @@ describe("ICRC-127 Core Functionality", () => {
     // @ts-ignore
     expect(result.Ok.result?.[0].result).toHaveProperty('Valid');
     const claimantBalance = await bountyCanister.get_balance(bountyClaimantIdentity.getPrincipal());
-    expect(claimantBalance).toBe(bountyAmount);
+    expect(claimantBalance).toBe(BOUNTY_AMOUNT); // Claimant should receive the bounty amount
 
     // --- ASSERT claim_metadata is populated correctly ---
     const finalBountyOpt = await bountyCanister.icrc127_get_bounty(bountyId);
@@ -117,7 +117,7 @@ describe("ICRC-127 Core Functionality", () => {
     expect(claimRecord.claim_metadata.length).toBeGreaterThan(0);
 
     // Check for specific metadata keys from the spec
-    expect(findMeta(claimRecord.claim_metadata as [string, Value][], 'icrc127:claim_amount')).toEqual({ Nat: bountyAmount });
+    expect(findMeta(claimRecord.claim_metadata as [string, Value][], 'icrc127:claim_amount')).toEqual({ Nat: BOUNTY_AMOUNT });
     expect(findMeta(claimRecord.claim_metadata as [string, Value][], 'icrc127:claim_canister')).toEqual({ Principal: bountyCanisterId });
     expect(findMeta(claimRecord.claim_metadata as [string, Value][], 'icrc127:claim_token_trx_id')).toHaveProperty('Nat'); // Check it exists
   });
@@ -222,6 +222,9 @@ describe('icrc127_list_bounties', () => {
   const creatorB_identity = createIdentity('creator-b');
   const claimantA_identity = createIdentity('claimant-a');
 
+  const BOUNTY_AMOUNT = 500_000n; // 500,000 tokens
+  const FEE_AMOUNT = 10_000n; // 10,000 tokens for payout fee
+
   beforeAll(async () => {
     pic = await PocketIc.create(process.env.PIC_URL);
 
@@ -237,21 +240,21 @@ describe('icrc127_list_bounties', () => {
     bountyCanister = bountyFixture.actor;
     bountyCanisterId = bountyFixture.canisterId;
 
-    await bountyCanister.mint(creatorA_identity.getPrincipal(), 1_000_000n);
-    await bountyCanister.mint(creatorB_identity.getPrincipal(), 1_000_000n);
+    await bountyCanister.mint(creatorA_identity.getPrincipal(), 2n * (BOUNTY_AMOUNT + FEE_AMOUNT));
+    await bountyCanister.mint(creatorB_identity.getPrincipal(), 2n * (BOUNTY_AMOUNT + FEE_AMOUNT));
     const farFutureNano = BigInt(await pic.getTime() * 1_000_000) + 3_600_000_000_000n;
 
     bountyCanister.setIdentity(creatorA_identity);
-    await bountyCanister.approve(bountyCanisterId, 1_000_000n);
+    await bountyCanister.approve(bountyCanisterId, 2n * (BOUNTY_AMOUNT + FEE_AMOUNT)); // Approve enough for two bounties
     const res1 = await bountyCanister.icrc127_create_bounty({
       bounty_id: [], validation_canister_id: Principal.fromText("aaaaa-aa"), timeout_date: farFutureNano, start_date: [],
-      challenge_parameters: { Text: "bounty one" }, bounty_metadata: [['tag', { Text: 'general' }], ['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: 500_000n }]],
+      challenge_parameters: { Text: "bounty one" }, bounty_metadata: [['tag', { Text: 'general' }], ['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: BOUNTY_AMOUNT }]],
     });
     bounty1_id = ('Ok' in res1 && res1.Ok.bounty_id) || 0n;
 
     const res2 = await bountyCanister.icrc127_create_bounty({
       bounty_id: [], validation_canister_id: Principal.fromText("aaaaa-aa"), timeout_date: farFutureNano, start_date: [],
-      challenge_parameters: { Text: "bounty two" }, bounty_metadata: [['tag', { Text: 'specific' }], ['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: 500_000n }]],
+      challenge_parameters: { Text: "bounty two" }, bounty_metadata: [['tag', { Text: 'specific' }], ['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: BOUNTY_AMOUNT }]],
     });
     bounty2_id = ('Ok' in res2 && res2.Ok.bounty_id) || 0n;
 
@@ -261,10 +264,10 @@ describe('icrc127_list_bounties', () => {
     });
 
     bountyCanister.setIdentity(creatorB_identity);
-    await bountyCanister.approve(bountyCanisterId, 500_000n);
+    await bountyCanister.approve(bountyCanisterId, BOUNTY_AMOUNT + FEE_AMOUNT); // Approve enough for one bounty
     const res3 = await bountyCanister.icrc127_create_bounty({
       bounty_id: [], validation_canister_id: bountyCanisterId, timeout_date: farFutureNano, start_date: [],
-      challenge_parameters: { Text: "bounty three" }, bounty_metadata: [['tag', { Text: 'general' }], ['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: 500_000n }]],
+      challenge_parameters: { Text: "bounty three" }, bounty_metadata: [['tag', { Text: 'general' }], ['icrc127:reward_canister', { Principal: bountyCanisterId }], ['icrc127:reward_amount', { Nat: BOUNTY_AMOUNT }]],
     });
     bounty3_id = ('Ok' in res3 && res3.Ok.bounty_id) || 0n;
   });

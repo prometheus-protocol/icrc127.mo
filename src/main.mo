@@ -174,6 +174,12 @@ shared (deployer) actor class ICRC127BountyCanister<system>(
           );
 
           // --- Provide token transfer hooks to the library ---
+          icrc1_fee = func(canister_id : Principal) : async Nat {
+            // For testing, we return a fixed fee.
+            // In a real implementation, this would query the ledger.
+            10_000; // Example fee
+          };
+
           icrc1_transfer = func(canister : Principal, args : ICRC2.TransferArgs) : async ICRC2.TransferResult {
             let from_balance = Option.get(Map.get(balances, Map.phash, thisPrincipal), 0);
             if (from_balance < args.amount) {

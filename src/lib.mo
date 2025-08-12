@@ -160,6 +160,10 @@ module {
         case (#ok(n)) { n };
       };
 
+      // 1. Get the fee from the ledger that will be charged for the *future* payout.
+      let fee = await environment.icrc1_fee(token_canister_id);
+      let total_escrow_amount = token_amount + fee;
+
       // 2. Pull funds into escrow using standard ICRC-2 arguments
       let from_account : Account = { owner = caller; subaccount = null };
       let self_account : Account = { owner = canister; subaccount = null };
@@ -167,9 +171,9 @@ module {
         spender_subaccount = null;
         from = from_account;
         to = self_account;
-        amount = token_amount;
+        amount = total_escrow_amount;
         fee = null;
-        memo = null;
+        memo = ?Text.encodeUtf8("icrc127:escrow");
         created_at_time = null;
       };
       let transfer_res = await environment.icrc2_transfer_from(token_canister_id, transfer_args);
@@ -187,6 +191,7 @@ module {
         creator = caller;
         token_canister_id = token_canister_id;
         token_amount = token_amount;
+        payout_fee = fee; // Store the payout fee
         validation_canister_id = req.validation_canister_id;
         validation_call_timeout = 10_000_000_000; // Default 10s
         bounty_metadata = req.bounty_metadata;
@@ -209,13 +214,6 @@ module {
       };
       // Call setActionSync with two arguments: time and the action record.
       let action_id_record = environment.tt.setActionSync<system>(req.timeout_date, actionRequest);
-
-      // --- ADD THIS DEBUG BLOCK ---
-      Debug.print("--- CREATE ---");
-      Debug.print("Bounty ID: " # Nat.toText(bounty_id));
-      Debug.print("TimerTool returned ActionId record: " # debug_show (action_id_record));
-      Debug.print("Storing Timer ID: " # Nat.toText(action_id_record.id));
-      // --- END DEBUG BLOCK ---
 
       ignore BTree.insert(state.expiration_timers, Nat.compare, bounty_id, action_id_record.id);
 
@@ -340,7 +338,7 @@ module {
             to = claimant_account;
             amount = original_bounty.token_amount;
             fee = null;
-            memo = null;
+            memo = ?Text.encodeUtf8("icrc127:payout");
             created_at_time = null;
             from_subaccount = null;
           };
@@ -412,9 +410,9 @@ module {
                 claim_account = req.account;
                 submission = req.submission;
                 claim_metadata = [];
+                // Still add the claim attempt to the record for a full audit trail.
                 result = ?run_result;
               };
-              // Still add the claim attempt to the record for a full audit trail.
               let final_bounty : Bounty = {
                 original_bounty with
                 claims = Array.append(original_bounty.claims, [new_claim_record]);
