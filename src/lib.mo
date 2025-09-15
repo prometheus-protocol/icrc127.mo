@@ -173,7 +173,7 @@ module {
         to = self_account;
         amount = total_escrow_amount;
         fee = null;
-        memo = ?Text.encodeUtf8("icrc127:escrow");
+        memo = null;
         created_at_time = null;
       };
       let transfer_res = await environment.icrc2_transfer_from(token_canister_id, transfer_args);
@@ -338,7 +338,7 @@ module {
             to = claimant_account;
             amount = original_bounty.token_amount;
             fee = null;
-            memo = ?Text.encodeUtf8("icrc127:payout");
+            memo = null;
             created_at_time = null;
             from_subaccount = null;
           };
@@ -588,7 +588,7 @@ module {
           to = { owner = bounty.creator; subaccount = null };
           amount = bounty.token_amount;
           fee = null;
-          memo = ?Blob.fromArray(Blob.toArray(Text.encodeUtf8("ICRC-127 Bounty Refund")));
+          memo = null;
           created_at_time = null;
           from_subaccount = null;
         };
