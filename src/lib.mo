@@ -41,6 +41,8 @@ module {
   public type Bounty = MigrationTypes.Current.Bounty;
   public type ClaimRecord = MigrationTypes.Current.ClaimRecord;
   public type Account = MigrationTypes.Current.Account;
+  public type RunBountyRequest = MigrationTypes.Current.RunBountyRequest;
+  public type RunBountyResult = MigrationTypes.Current.RunBountyResult;
 
   public let ICRC85_Timer_Namespace = "icrc85:ovs:shareaction:icrc127";
   public let ICRC85_Payment_Namespace = "org.icdevs.libraries.icrc127";
