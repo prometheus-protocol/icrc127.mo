@@ -67,9 +67,14 @@ module {
 
   public type Bounty = {
     bounty_id : Nat;
+    creator : Principal;
+    token_canister_id : Principal;
+    token_amount : Nat;
+    payout_fee : Nat;
     validation_canister_id : Principal;
     validation_call_timeout : Nat;
-    bounty_metadata : ICRC16Map; // Corrected to snake_case
+    bounty_metadata : ICRC16Map;
+    challenge_parameters : ICRC16;
     timeout_date : ?Nat;
     claimed : ?Nat;
     claims : [ClaimRecord];
