@@ -575,12 +575,12 @@ module {
       };
 
       // Defensively check if the bounty has already been claimed.
-      // If so, the timer firing is an error (due to the TimerTool bug),
-      // so we should do nothing and simply exit gracefully.
+      // If so, the timer should be permanently removed from the queue.
+      // Return #trappable to signal TimerTool to delete this action.
       if (bounty.claimed != null) {
         // Clean up the orphaned timer mapping just in case.
         ignore BTree.delete(state.expiration_timers, Nat.compare, bounty_id);
-        return #awaited(id);
+        return #trappable(id); // Changed from #awaited to #trappable to prevent infinite loop
       };
 
       // Safety check: only expire unclaimed bounties
